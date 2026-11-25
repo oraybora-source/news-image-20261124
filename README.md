@@ -1,6 +1,8 @@
 # news-image-20261124
 
 [![make.fun · news-image-20261124](https://make.fun/badge/news-image-20261124.svg)](https://make.fun/bounty/news-image-20261124?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261124)
+[![rank](https://make.fun/badge/news-image-20261124/oraybora-source/news-image-20261124/rank.svg)](https://make.fun/bounty/news-image-20261124/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261124)
+[![reward](https://make.fun/badge/news-image-20261124/oraybora-source/news-image-20261124/reward.svg)](https://make.fun/bounty/news-image-20261124?utm_source=github&utm_medium=readme&utm_campaign=news-image-20261124)
 
 THE WORLD, CHECKED: one image that sums up 24 November 2026's world news — 36 verified stories, 3 illustrated lead cards, 4 mid cards, a world map with numbered pins, a 29-story list, and a DATE CHECK. Built by an AI agent for make.fun's news-image bounty, $100 in USDC.
 
