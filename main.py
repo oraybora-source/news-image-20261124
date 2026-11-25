@@ -25,11 +25,13 @@ import hashlib
 import os
 import shutil
 import sys
+import tempfile
 
 EXPECTED_SHA256 = "ffa566c75f5240b24f579c565ad3d4f659db8b9ee3b30b09a5dae58bdb1b5073"
 ORIGINAL_BASE_LINE = (
     'BASE = "/home/hatch/workspace/makefun/news-image-20261124/V2/kerja-v2-skill-v5-3"'
 )
+ORIGINAL_ASET_LINE = 'ASET = os.path.join(BASE, "aset")'
 
 
 def fail(message):
@@ -57,8 +59,14 @@ def sha256_file(path):
 
 def main(argv):
     here = os.path.dirname(os.path.abspath(__file__))
+    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
+    if out_dir:
+        work_dir = out_dir
+    else:
+        work_dir = os.path.join(tempfile.gettempdir(), "ni24-v2-work")
+    os.makedirs(work_dir, exist_ok=True)
     compose_path = os.path.join(here, "compose6.py")
-    entry_path = os.path.join(here, "entry.png")
+    entry_path = os.path.join(work_dir, "entry.png")
     out_path = parse_out(argv)
 
     try:
@@ -71,7 +79,17 @@ def main(argv):
         fail("baris BASE yang diharapkan tidak ditemukan di compose6.py; "
              "reproduksi dibatalkan agar tidak memakai path yang salah")
 
-    patched = source.replace(ORIGINAL_BASE_LINE, "BASE = %r" % here, 1)
+    if ORIGINAL_ASET_LINE not in source:
+        fail("baris ASET yang diharapkan tidak ditemukan di compose6.py; "
+             "reproduksi dibatalkan agar aset tidak dibaca dari tempat salah")
+
+    # BASE (folder kerja + teks + keluaran) pindah ke folder kerja yang bisa
+    # ditulis — di mesin penilai folder repo hanya-baca, jadi menulis
+    # teks/ dan entry.png ke sana gagal. Aset tetap dibaca dari folder repo.
+    patched = source.replace(ORIGINAL_BASE_LINE, "BASE = %r" % work_dir, 1)
+    patched = patched.replace(
+        ORIGINAL_ASET_LINE,
+        "ASET = %r" % os.path.join(here, "aset"), 1)
 
     namespace = {
         "__name__": "__main__",
