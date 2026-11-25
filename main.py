@@ -1,71 +1,114 @@
-#!/usr/bin/env python3
-"""news-image-20261124 — entrypoint: entry V2 skill Lapis 1 v5.3 (revisi).
+"""Titik masuk reproduksi untuk entry ni24 V2.
 
-Mereproduksi entry.png (1024x1024, sha256
-ffa566c75f5240b24f579c565ad3d4f659db8b9ee3b30b09a5dae58bdb1b5073)
-secara deterministik: dua run menghasilkan byte yang identik.
+Cara kerja script ini, singkatnya:
+- Script ini tinggal di folder repo, berdampingan dengan compose6.py.
+- Saat dijalankan, ia membaca compose6.py sebagai teks, lalu menukar satu
+  baris yang menunjuk ke folder kerja asal di mesin pembuat (path absolut
+  yang tidak ada di mesin lain) dengan baris yang menunjuk ke folder repo
+  ini. Folder repo itu dihitung saat jalan dari lokasi file main.py
+  sendiri, bukan ditulis mati di dalam kode.
+- Isi compose6.py yang sudah ditukar itu lalu dijalankan di dalam proses
+  ini, dengan argv seolah-olah compose6.py dipanggil langsung dengan
+  subperintah "entry". compose6.py yang berjalan itulah yang menyusun
+  entry.png di folder repo.
+- Terakhir, script menghitung sha256 dari entry.png hasil dan
+  membandingkannya dengan nilai yang diharapkan. Bila sama, reproduksi
+  terbukti; bila beda, script berhenti dengan kode gagal dan pesan yang
+  menjelaskan ketidaksesuaiannya.
 
-Cara kerja: entry ini dirakit ffmpeg (overlay + drawbox + drawtext) oleh
-compose6.py, tanpa PIL. compose6.py aslinya menulis BASE absolut folder V2
-tempat ia dibangun; main.py ini menjalankan ulang compose6.py dengan SATU
-baris itu diarahkan ke folder repo ini (ROOT), selebihnya byte-identik —
-supaya entrypoint bisa jalan dari checkout mana pun, bukan hanya dari
-folder V2 aslinya. Tidak ada jaringan, jam, atau acak di build ini.
-
-Pakai:
-  python3 main.py                  # tulis entry.png di folder ini
-  python3 main.py --out <path>     # tulis ke path lain
-
-Dependensi: python3 stdlib + ffmpeg di PATH + font Noto (Serif/Sans) di
-/usr/share/fonts/truetype/noto/. Aset gambar di aset/ (11 ilustrasi Muse
-image + peta.png). Peta dibuat map6.py dari data/peta-ne110m.json
-(Natural Earth 1:110m, domain publik) — peta.png yang dipakai sudah ada
-di aset/, map6.py disertakan untuk keterlacakan.
+Pemakaian:
+    python3 main.py [--out <path>]
+Opsi --out menyalin entry.png hasil ke path lain setelah dibuat.
 """
+
 import hashlib
 import os
 import shutil
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-EXPECTED_SHA = "ffa566c75f5240b24f579c565ad3d4f659db8b9ee3b30b09a5dae58bdb1b5073"
-BASE_LINE = ('BASE = "/home/hatch/workspace/makefun/news-image-20261124/'
-             'V2/kerja-v2-skill-v5-3"')
+EXPECTED_SHA256 = "ffa566c75f5240b24f579c565ad3d4f659db8b9ee3b30b09a5dae58bdb1b5073"
+ORIGINAL_BASE_LINE = (
+    'BASE = "/home/hatch/workspace/makefun/news-image-20261124/V2/kerja-v2-skill-v5-3"'
+)
 
 
-def sha256(path):
-    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+def fail(message):
+    print("main.py: GAGAL - " + message, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def parse_out(argv):
+    """Ambil nilai --out dari argv, atau None bila tidak diberikan."""
+    if "--out" not in argv:
+        return None
+    i = argv.index("--out")
+    if i + 1 >= len(argv):
+        fail("opsi --out butuh nilai path")
+    return argv[i + 1]
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main(argv):
-    out = os.path.join(ROOT, "entry.png")
-    args = list(argv[1:])
-    i = 0
-    while i < len(args):
-        if args[i] == "--out" and i + 1 < len(args):
-            out = args[i + 1]
-            i += 2
-        else:
-            i += 1
-    compose_path = os.path.join(ROOT, "compose6.py")
-    src = open(compose_path, encoding="utf-8").read()
-    if BASE_LINE not in src:
-        raise SystemExit("compose6.py berubah: baris BASE yang diharapkan "
-                         "tidak ditemukan — entrypoint menolak jalan.")
-    # Satu-satunya perubahan terhadap compose6.py: BASE menunjuk folder repo.
-    src = src.replace(BASE_LINE, "BASE = " + repr(ROOT), 1)
-    ns = {"__name__": "__main__", "__file__": compose_path}
+    here = os.path.dirname(os.path.abspath(__file__))
+    compose_path = os.path.join(here, "compose6.py")
+    entry_path = os.path.join(here, "entry.png")
+    out_path = parse_out(argv)
+
+    try:
+        with open(compose_path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+    except OSError as exc:
+        fail("tidak bisa membaca %s: %s" % (compose_path, exc))
+
+    if ORIGINAL_BASE_LINE not in source:
+        fail("baris BASE yang diharapkan tidak ditemukan di compose6.py; "
+             "reproduksi dibatalkan agar tidak memakai path yang salah")
+
+    patched = source.replace(ORIGINAL_BASE_LINE, "BASE = %r" % here, 1)
+
+    namespace = {
+        "__name__": "__main__",
+        "__file__": compose_path,
+        "__builtins__": __builtins__,
+    }
+    saved_argv = sys.argv
     sys.argv = ["compose6.py", "entry"]
-    exec(compile(src, compose_path, "exec"), ns)
-    built = os.path.join(ROOT, "entry.png")
-    if os.path.abspath(out) != os.path.abspath(built):
-        shutil.copyfile(built, out)
-    got = sha256(out)
-    print("main.py: entry sha", got)
-    if got != EXPECTED_SHA:
-        raise SystemExit("SHA TIDAK COCOK dengan entry V2 revisi "
-                         f"(diharapkan {EXPECTED_SHA})")
-    print("main.py: SHA COCOK dengan entry V2 revisi.")
+    try:
+        exec(compile(patched, compose_path, "exec"), namespace)
+    except SystemExit as exc:
+        if exc.code not in (None, 0):
+            fail("compose6.py berhenti dengan kode %r" % (exc.code,))
+    finally:
+        sys.argv = saved_argv
+
+    if not os.path.isfile(entry_path):
+        fail("compose6.py selesai tapi entry.png tidak ditemukan di %s"
+             % entry_path)
+
+    final_path = entry_path
+    if out_path:
+        out_abs = os.path.abspath(out_path)
+        if out_abs != os.path.abspath(entry_path):
+            try:
+                shutil.copyfile(entry_path, out_abs)
+            except OSError as exc:
+                fail("tidak bisa menyalin entry.png ke %s: %s" % (out_abs, exc))
+            final_path = out_abs
+
+    got = sha256_file(final_path)
+    if got != EXPECTED_SHA256:
+        fail("sha256 hasil %s tidak cocok dengan yang diharapkan %s"
+             % (got, EXPECTED_SHA256))
+
+    print("sha256: " + got)
+    print("OK - entry.png cocok dengan nilai yang diharapkan: " + final_path)
     return 0
 
 
